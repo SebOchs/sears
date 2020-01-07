@@ -23,7 +23,7 @@ def repeat(repeat_numbers, tensor):
 
 def transform_dec_states(decStates, repeat_numbers):
     assert len(repeat_numbers) == decStates._all[0].data.shape[1]
-    vars = [Variable(repeat(repeat_numbers, e.data), volatile=True)
+    vars = [Variable(repeat(repeat_numbers, e.data))
             for e in decStates._all]
     decStates.hidden = tuple(vars[:-1])
     decStates.input_feed = vars[-1]
@@ -122,7 +122,7 @@ class OnmtModel(object):
         encStates, context = self.translator.model.encoder(src, src_lengths)
         decStates = self.translator.model.decoder.init_decoder_state(
                                         src, context, encStates)
-        src_example = batch.dataset.examples[batch.indices[0].data[0]].src
+        src_example = batch.dataset.examples[batch.indices[0].data.item()].src
         return encStates, context, decStates, src_example
 
     def advance_states(self, encStates, context, decStates, new_idxs,
@@ -182,24 +182,24 @@ class OnmtModel(object):
                 self.translator.translate(batch, data))
             # This is doing replace_unk
             if self.translator.opt.replace_unk:
-                src_example = batch.dataset.examples[batch.indices[0].data[0]].src
+                src_example = batch.dataset.examples[batch.indices[0].data.item()].src
                 for i, x in enumerate(predBatch):
                     for j, sentence in enumerate(x):
                         for k, word in enumerate(sentence):
                             if word == vocab.itos[onmt.IO.UNK]:
                                 _, maxIndex = attn[i][j][k].max(0)
-                                m = int(maxIndex[0])
+                                m = int(maxIndex.item())
                                 predBatch[i][j][k] = src_example[m]
                                 # print 'ae', word, src_example[m]
             if return_from_mapping:
                 this_mappings = []
-                src_example = batch.dataset.examples[batch.indices[0].data[0]].src
+                src_example = batch.dataset.examples[batch.indices[0].data.item()].src
                 for i, x in enumerate(predBatch):
                     for j, sentence in enumerate(x):
                         mapping = {}
                         for k, word in enumerate(sentence):
                             _, maxIndex = attn[i][j][k].max(0)
-                            m = int(maxIndex[0])
+                            m = int(maxIndex.item())
                             mapping[k] = src_example[m]
                         this_mappings.append(mapping)
 

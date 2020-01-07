@@ -11,9 +11,11 @@ import sys
 PYTHON3 = sys.version_info > (3, 0)
 if PYTHON3:
     from itertools import zip_longest as zip_longest
+
     unicode = lambda x: x
 else:
     from itertools import izip_longest as zip_longest
+
 
 # add_after(x, a): z x b -> z x a b
 # remove_after(x, a): z x a -> z x
@@ -50,6 +52,7 @@ def largest_indices(ary, n):
     indices = indices[np.argsort(-flat[indices])]
     return np.unravel_index(indices, ary.shape)
 
+
 class OpToken:
     def __init__(self, type_, value):
         self.type = type_
@@ -66,7 +69,9 @@ class OpToken:
     def hash(self):
         return self.type + '_' + self.value
 
+
 Token = collections.namedtuple('Token', ['text', 'pos', 'tag'])
+
 
 def capitalize(text):
     if len(text) == 0:
@@ -75,6 +80,7 @@ def capitalize(text):
         return text.upper()
     else:
         return '%s%s' % (text[0].upper(), text[1:])
+
 
 class Tokenizer:
     def __init__(self, nlp):
@@ -87,6 +93,7 @@ class Tokenizer:
             token_sequence = [Token(x.text, x.pos_, x.tag_) for x in p]
             ret.append(token_sequence)
         return ret
+
     def tokenize_text(self, texts):
         return [' '.join([a.text for a in x]) for x in self.nlp.tokenizer.pipe(texts)]
 
@@ -96,8 +103,6 @@ class Tokenizer:
 
     def clean_for_humans(self, texts):
         return [re.sub("\s(n')", r'\1', re.sub(r'\s\'(\w)', r"'\1", capitalize(x))) for x in texts]
-
-
 
 
 class ReplaceRule:
@@ -163,7 +168,9 @@ class ReplaceRule:
         return np.array(idxs), new_texts
 
     def hash(self):
-        return ' '.join([op.hash() for op in self.op_sequence]) + ' -> ' + ' '.join([op.hash() for op in self.replace_sequence])
+        return ' '.join([op.hash() for op in self.op_sequence]) + ' -> ' + ' '.join(
+            [op.hash() for op in self.replace_sequence])
+
 
 class TextToReplaceRules:
     def __init__(self, nlp, from_dataset, flip_dataset=[], min_freq=.01, min_flip=0.01, ngram_size=4):
@@ -200,7 +207,6 @@ class TextToReplaceRules:
             for n in ngrams_flipped:
                 self.ngram_flip_freq[n] += 1
 
-
     # def is_ngram_frequent(self, ngram):
 
     def is_param_ngram_frequent(self, ngram, flip=False):
@@ -218,7 +224,6 @@ class TextToReplaceRules:
         ngram = rule.op_sequence
         ngram = tuple([x.hash() for x in ngram])
         return self.ngram_idxs[ngram]
-
 
     def get_positions(self, tokenized_sentence, ngram_size):
         def get_params(token):
@@ -240,7 +245,6 @@ class TextToReplaceRules:
                         continue
                     positions.setdefault(ngram, i)
         return positions
-
 
     def compute_rules(self, sentence, others, use_words=True, use_pos=True, use_tags=False, max_rule_length=3):
         # print(sentence)
@@ -285,8 +289,10 @@ class TextToReplaceRules:
             end = ops[-1][2] + 1
             start_o = ops[0][3] + 1
             end_o = ops[-1][4] + 1
-            reps = [n_doc[start:end], n_doc[start -1:end], n_doc[start: end + 1], n_doc[start - 1: end + 1]]
-            withs = [ n_other[start_o: end_o], n_other[start_o - 1: end_o], n_other[start_o: end_o + 1], n_other[start_o - 1: end_o + 1]]
+            reps = [n_doc[start:end], n_doc[start - 1:end], n_doc[start: end + 1], n_doc[start - 1: end + 1]]
+            withs = [n_other[start_o: end_o], n_other[start_o - 1: end_o], n_other[start_o: end_o + 1],
+                     n_other[start_o - 1: end_o + 1]]
+
             # new = doc[:start - 1] + other_doc[start_o - 1:end_o - 1] + doc[end - 1:]
             # if ' '.join([x.text for x in new]) != ' '.join([x.text for x in other_doc]):
             #     print 'ERROR'
@@ -312,8 +318,6 @@ class TextToReplaceRules:
                 if len(most_common) == 0 or most_common[0][1] <= 0:
                     return True
                 return False
-
-
 
             this_rules = []
             other_sentence = ' '.join(other)
