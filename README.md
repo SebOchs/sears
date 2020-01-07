@@ -4,7 +4,7 @@ Code for [Semantically Equivalent Adversarial Rules for Debugging NLP Models](ht
 # Installation
 Run the following:
 ```
-git clone git@github.com:SebOchs/sears.git
+git clone https://github.com/SebOchs/sears.git
 cd sears
 virtualenv -p python3 ENV
 source ENV/bin/activate
