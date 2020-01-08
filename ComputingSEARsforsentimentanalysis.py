@@ -13,7 +13,7 @@ import numpy as np
 import os
 import spacy
 
-nlp = spacy.load('en_core_web_sm')
+nlp = spacy.load('en_core_web_md')
 from sears import replace_rules
 import pickle
 import time
@@ -26,7 +26,7 @@ import re
 # Own imports
 from transformers import BertForSequenceClassification, BertTokenizer
 import torch
-
+import torch.nn.functional as F
 device = torch.device("cuda")
 ps = paraphrase_scorer.ParaphraseScorer(gpu_id=0)
 
@@ -64,6 +64,18 @@ def separate_answers(bert_text, cls='[CLS]', sep='[SEP]'):
     return ans1, ans2
 
 
+def predict(model, ref, stud, orig_pred):
+    token_ids, segment, attention, lab = \
+        BertPreprocessor(bert_tokenizer, data=[list_to_string(ref), list_to_string(stud), orig_pred]).load_data()
+    token_ids = torch.tensor([token_ids]).long().to(device)
+    segment = torch.tensor([segment]).long().to(device)
+    attention = torch.tensor([attention]).long().to(device)
+    outputs = model.forward(input_ids=token_ids, attention_mask=attention, token_type_ids=segment)
+    logits = outputs[0].detach().cpu().squeeze()
+    return logits
+
+
+
 # test = ['[CLS]', 'terminal', '1', 'is', 'connected', 'to', 'the', 'negative', 'battery', 'terminal', '[SEP]', 'fjdaj',
 #        '##f', '##test', 'is', 'it', 'tr', '##ue', '[SEP]']
 # print(separate_answers(test))
@@ -83,7 +95,7 @@ model.cuda()
 model.eval()
 
 # data derived from correct beetle predictions, list of tuples of reference answer, student's answer and prediction
-data = [(tuple([list_to_string(y) for y in separate_answers(x[0])]) + (x[1], )) for x in data_beetle]
+data = [(tuple([list_to_string(y) for y in separate_answers(x[0])]) + (x[1], )) for x in data_beetle][0:1000]
 
 def create_possible_flips(instance, model, topk=10, threshold=-10, ):
     """
@@ -104,14 +116,9 @@ def create_possible_flips(instance, model, topk=10, threshold=-10, ):
     texts = tokenizer.clean_for_model(tokenizer.clean_for_humans([x[0] for x in paraphrases]))
     # Let model classify the paraphrases and remember those, where it differs from the original prediction
     for i, sent in enumerate(texts):
-        token_ids, segment, attention, lab = \
-            BertPreprocessor(bert_tokenizer, data=[list_to_string(ref), list_to_string(sent), orig_pred]).load_data()
-        token_ids = torch.tensor([token_ids]).long().to(device)
-        segment = torch.tensor([segment]).long().to(device)
-        attention = torch.tensor([attention]).long().to(device)
-        outputs = model.forward(input_ids=token_ids, attention_mask=attention, token_type_ids=segment)
-        label = np.argmax(outputs)
-        if orig_pred != label:
+        logits_old = predict(model, ref, stud, orig_pred)
+        logits = predict(model, ref, texts, orig_pred)
+        if orig_pred == int(np.argmax(logits_old)) != int(np.argmax(logits)):
             fs.append((sent, paraphrases[i][1]))
 
     return fs
@@ -123,7 +130,7 @@ flips = collections.defaultdict(lambda: [])
 # Find flips in data
 for i, inst in enumerate(data):
     print("Data instance: ", i)
-    fs = create_possible_flips(inst, model, topk=100, threshold=-10)
+    fs = create_possible_flips(inst, model, topk=10, threshold=-10)
     # Key for the flips is the student's answer
     flips[inst[1]].extend([x[0] for x in fs])
 
@@ -153,7 +160,7 @@ for z, f in enumerate(flips):
 # Tokenize the student's answers
 tokenized_stud_ans = tokenizer.tokenize([x[1] for x in data])
 model_preds = {}
-len(frequent_rules)
+print("Number of frequent rules: ",len(frequent_rules))
 
 a = time.time()
 rule_flips = {}
@@ -180,14 +187,9 @@ for i, r in enumerate(frequent_rules):
             j, new_stud = compute
             # Get reference answer for sequence classification
             orig_instance = data[j]
-            token_ids, segment, attention, lab = \
-                BertPreprocessor(bert_tokenizer,
-                                 data=[orig_instance[0], new_stud, orig_instance[2]]).load_data()
-            token_ids = torch.tensor([token_ids]).long().to(device)
-            segment = torch.tensor([segment]).long().to(device)
-            attention = torch.tensor([attention]).long().to(device)
-            outputs = model.forward(input_ids=token_ids, attention_mask=attention, token_type_ids=segment)
-            new_labels.append(np.argmax(outputs))
+            logits = predict(model, orig_instance[0], new_stud, orig_instance[2])
+            new_label = int(np.argmax(logits))
+            new_labels.append(new_label)
         for x, y in zip(to_compute, new_labels):
             model_preds[x[1]] = y
     # got error because of missing key
@@ -269,7 +271,7 @@ threshold = -7.15
 # x = choose_rules_coverage(fake_scores, frequent_flips, frequent_supports,
 disqualified = disqualify_rules(rule_scores, frequent_flips,
                                 rule_precsupports,
-                                min_precision=0.0, min_flips=6,
+                                min_precision=0.0, min_flips=4,
                                 min_bad_score=threshold, max_bad_proportion=.10,
                                 max_bad_sum=999999)
 
@@ -305,10 +307,19 @@ for r in x:
     print('Rule: %s' % rule.hash())
     print()
     for f in rule_flips[rid][:2]:
-        print('%s\nP(positive):%.2f' % (data[f][1], model.predict_proba([data[f][1]])[0, 1]))
+        logits_old = predict(model, data[f][0], data[f][1], data[f][2])
+        prob_old = F.softmax(logits_old)
+        label_old = int(np.argmax(logits_old))
+        print('%s\nP(positive):%.2f' % (data[f][1], prob_old[label_old]))
+        print("Class: ", label_old)
         print()
         new = rule.apply(tokenized_stud_ans[f])[1]
-        print('%s\nP(positive):%.2f' % (new, model.predict_proba([new])[0, 1]))
+        logits_new = predict(model, data[f][0], new, data[f][2])
+        prob_new = F.softmax(logits_new)
+        label_new = int(np.argmax(logits_new))
+        print('%s\nP(positive):%.2f' % (new, prob_new[label_new]))
+        print("Class: ", label_new)
         print()
         print()
     print('---------------')
+print("Stop!")
