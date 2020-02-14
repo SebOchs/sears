@@ -1,12 +1,12 @@
 import os
-
 from transformers import BertForSequenceClassification
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import sys
-from bert.preprocessing import BertPreprocessor
-
+import io
 sys.path.append('sears')  # noqa
+sys.path.append('../bert')
+from preprocessing import BertPreprocessor
 import paraphrase_scorer
 import onmt_model
 import numpy as np
@@ -27,7 +27,15 @@ import re
 from transformers import BertForSequenceClassification, BertTokenizer
 import torch
 import torch.nn.functional as F
+
+logger = "log_for_val.txt"
+
+if os.path.exists(logger):
+    print("Log exists already!")
 device = torch.device("cuda")
+
+lg = io.StringIO()
+
 ps = paraphrase_scorer.ParaphraseScorer(gpu_id=0)
 
 
@@ -86,7 +94,7 @@ pretrained_weights = 'bert-base-uncased'
 bert_tokenizer = BertTokenizer.from_pretrained(pretrained_weights)
 
 # Own data
-data_beetle = np.load('../data/sear_data/correct_beetle.npy', allow_pickle=True)
+data_beetle = np.load('../data/sear_data/correct_sciEnts_val.npy', allow_pickle=True)
 
 # Own model
 model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)
@@ -95,7 +103,7 @@ model.cuda()
 model.eval()
 
 # data derived from correct beetle predictions, list of tuples of reference answer, student's answer and prediction
-data = [(tuple([list_to_string(y) for y in separate_answers(x[0])]) + (x[1], )) for x in data_beetle][0:1000]
+data = [(tuple([list_to_string(y) for y in separate_answers(x[0])]) + (x[1], )) for x in data_beetle]
 
 def create_possible_flips(instance, model, topk=10, threshold=-10, ):
     """
@@ -129,7 +137,8 @@ flips = collections.defaultdict(lambda: [])
 
 # Find flips in data
 for i, inst in enumerate(data):
-    print("Data instance: ", i)
+    if i % 1000 == 0:
+        print("Data instance nr: ", i, file=lg)
     fs = create_possible_flips(inst, model, topk=10, threshold=-10)
     # Key for the flips is the student's answer
     flips[inst[1]].extend([x[0] for x in fs])
@@ -155,12 +164,13 @@ for z, f in enumerate(flips):
                 frequent_rules.append(r)
             i = rule_idx[r.hash()]
             rule_flips[i].append(z)
-    print("Done with flip nr. ", z)
+    if z % 1000 == 0:
+        print("Done with flip nr. ", z, file=lg)
 
 # Tokenize the student's answers
 tokenized_stud_ans = tokenizer.tokenize([x[1] for x in data])
 model_preds = {}
-print("Number of frequent rules: ",len(frequent_rules))
+print("Number of frequent rules: ",len(frequent_rules), file=lg)
 
 a = time.time()
 rule_flips = {}
@@ -168,6 +178,8 @@ rule_other_texts = {}
 rule_other_flips = {}
 rule_applies = {}
 for i, r in enumerate(frequent_rules):
+    if i % 100 == 0:
+        print("Nr. of rules applied: ", i, file=lg)
     # Get indices, where rule can be applied
     idxs = list(tr2.get_rule_idxs(r))
     to_apply = [tokenized_stud_ans[x] for x in idxs]
@@ -201,10 +213,10 @@ for i, r in enumerate(frequent_rules):
     rule_other_flips[i] = where_flipped
     rule_applies[i] = applies
 
-print("Time used for applying rules: ", time.time() - a)
+print("Time used for applying rules: ", time.time() - a, file=lg)
 
-really_frequent_rules = [i for i in range(len(rule_flips)) if len(rule_flips[i]) > 1]
-print("Amount of really frequent rules: ", len(really_frequent_rules))
+really_frequent_rules = [i for i in range(len(rule_flips)) if len(rule_flips[i]) > 2]
+print("Amount of really frequent rules: ", len(really_frequent_rules), file=lg)
 
 # to_compute_score = collections.defaultdict(lambda: set())
 # for i in really_frequent_rules:
@@ -217,6 +229,8 @@ threshold = -7.15
 
 orig_scores = {}
 for i, t in enumerate(data):
+    if i % 1000 == 0:
+        print("Calculated original scores for nr. of sentences: ", i, file=lg)
     orig_scores[i] = ps.score_sentences(t[1], [t[1]])[0]
 
 # I want rules s.t. the decile > -7.15. The current bottom 10% of a rule is always a lower bound on the decile, so if I see applies / 10 with score < -7.15 I can stop computing scores for that rule
@@ -253,13 +267,13 @@ for idx, i in enumerate(really_frequent_rules):
             rejected.add(idx)
             break
     rule_scores.append(scores)
-
-    print("Evaluated frequent rule nr. ", idx)
+    if idx % 1000 == 0:
+        print("Evaluated reallyfrequent rule nr. ", idx, file=lg)
 
 # import pickle
 # pickle.dump({'ps_scores': ps_scores, 'orig_scores': orig_scores}, open('/home/marcotcr/tmp/polarity_scoresz.pkl', 'wb'))
 
-print("Number of rules after rejection process: ", len(rule_scores) - len(rejected))
+print("Number of rules after rejection process: ", len(rule_scores) - len(rejected), file=lg)
 
 rule_flip_scores = [rule_scores[i][rule_other_flips[really_frequent_rules[i]]] for i in range(len(rule_scores))]
 
@@ -271,7 +285,7 @@ threshold = -7.15
 # x = choose_rules_coverage(fake_scores, frequent_flips, frequent_supports,
 disqualified = disqualify_rules(rule_scores, frequent_flips,
                                 rule_precsupports,
-                                min_precision=0.0, min_flips=4,
+                                min_precision=0.0, min_flips=5,
                                 min_bad_score=threshold, max_bad_proportion=.10,
                                 max_bad_sum=999999)
 
@@ -287,39 +301,42 @@ x = choose_rules_coverage(rule_flip_scores, frequent_flips, None,
                           max_bad_sum=999999,
                           disqualified=disqualified,
                           start_from=[])
-print("Rule coverage chosen. ", time.time() - a)
+print("Rule coverage chosen in seconds: ", time.time() - a, file=lg)
 support_denominator = float(len(data))
 soup = lambda x: len(rule_applies[really_frequent_rules[x]]) / support_denominator
 prec = lambda x: frequent_flips[x].shape[0] / float(len(rule_scores[x]))
 fl = len(set([a for r in x for a in frequent_flips[r]]))
-print('Instances flipped: %d (%.2f)' % (fl, fl / float(len(data))))
+print('Instances flipped: %d (%.2f)' % (fl, fl / float(len(data))), file=lg)
 print('\n'.join(['%-5d %-5d %-5d %-35s f:%d avg_s:%.2f bad_s:%.2f bad_sum:%d Prec:%.2f Supp:%.2f' % (
     i, x[i], really_frequent_rules[r],
     frequent_rules[really_frequent_rules[r]].hash().replace('text_', '').replace('pos_', '').replace('tag_', ''),
     frequent_flips[r].shape[0],
     np.exp(rule_flip_scores[r]).mean(), (rule_scores[r] < threshold).mean(),
-    (rule_scores[r] < threshold).sum(), prec(r), soup(r)) for i, r in enumerate(x)]))
+    (rule_scores[r] < threshold).sum(), prec(r), soup(r)) for i, r in enumerate(x)]), file=lg)
 
 # ### a couple of examples from the first rules
 for r in x:
     rid = really_frequent_rules[r]
     rule = frequent_rules[rid]
-    print('Rule: %s' % rule.hash())
+    print('Rule: %s' % rule.hash(), file=lg)
     print()
-    for f in rule_flips[rid][:2]:
+    for f in rule_flips[rid]:
         logits_old = predict(model, data[f][0], data[f][1], data[f][2])
         prob_old = F.softmax(logits_old)
         label_old = int(np.argmax(logits_old))
-        print('%s\nP(positive):%.2f' % (data[f][1], prob_old[label_old]))
-        print("Class: ", label_old)
-        print()
         new = rule.apply(tokenized_stud_ans[f])[1]
         logits_new = predict(model, data[f][0], new, data[f][2])
         prob_new = F.softmax(logits_new)
         label_new = int(np.argmax(logits_new))
-        print('%s\nP(positive):%.2f' % (new, prob_new[label_new]))
-        print("Class: ", label_new)
-        print()
-        print()
-    print('---------------')
-print("Stop!")
+        if label_new != label_old:
+            print('%s\nP(%d):%.2f' % (data[f][1], label_old, prob_old[label_old]), file=lg)
+            print()
+            print('%s\nP(%d):%.2f' % (new, label_new, prob_new[label_new]), file=lg)
+            print()
+            print()
+    print('---------------', file=lg)
+print("Stop!", file=lg)
+
+final_log = open(logger, "a")
+final_log.write(lg.getvalue())
+final_log.close()
