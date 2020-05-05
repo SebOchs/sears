@@ -358,6 +358,7 @@ class TextToReplaceRules:
                 # print [list(y.hash() for y in x) for x in ngrams if self.is_param_ngram_frequent(x)]
                 # print
                 # print
+
                 this_rules.extend(rules)
             all_rules.append(this_rules)
         return all_rules
