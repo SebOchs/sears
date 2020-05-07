@@ -514,7 +514,6 @@ def main():
     for i, inst in enumerate(data):
         print("Data instances finished: ", i)
         adversaries = []
-        # Baseline run:
         num_tf_changed, num_tf_queries, tf_adversaries = text_fooler(inst, 0, model, stop_words_set,
                                                                      word2idx, idx2word, cos_sim, sim_predictor=use,
                                                                      sim_score_threshold=0.7,
@@ -523,13 +522,13 @@ def main():
                                                                      synonym_num=50,
                                                                      batch_size=16)
         # Uncomment for textfooler only
-        # query_num, success_num, bug_adversaries = text_bugger(inst, 0, model)
+        query_num, success_num, bug_adversaries = text_bugger(inst, 0, model)
         # Was used to track top adjectives and adversaries
         """, tracker_adj, tracker_adv"""
 
         # All adversaries
         adversaries.extend(tf_adversaries)
-        #adversaries.extend(bug_adversaries)
+        adversaries.extend(bug_adversaries)
 
         # Was used to track top adjectives and adversaries
         """
@@ -543,15 +542,15 @@ def main():
             flips[list_to_string(inst[1])].extend(adversaries)
             adversary_successes['tf'] = adversary_successes.get('tf', 0) + num_tf_changed
             adversary_count['tf'] = adversary_count.get('tf', 0) + num_tf_queries
-        #    for key in query_num:
-        #        adversary_successes[key] = adversary_successes.get(key, 0) + success_num.get(key, 0)
-        #        adversary_count[key] = adversary_count.get(key, 0) + query_num.get(key, 0)
+            for key in query_num:
+                adversary_successes[key] = adversary_successes.get(key, 0) + success_num.get(key, 0)
+                adversary_count[key] = adversary_count.get(key, 0) + query_num.get(key, 0)
 
     # Was used to track top adjectives and adversaries
     # np.save("adv_result.npy", main_tracker_adv)
     # np.save("adj_result.npy", main_tracker_adj)
-    np.save("bs_adversary_successes_tf.npy", adversary_successes)
-    np.save("bs_adversary_count_tf.npy", adversary_count)
+    np.save("adversary_successes_tf.npy", adversary_successes)
+    np.save("adversary_count_tf.npy", adversary_count)
     tr2 = replace_rules.TextToReplaceRules(nlp, [list_to_string(x[1]) for x in data], [], min_freq=0.005, min_flip=0.005,
                                            ngram_size=2)
 
@@ -629,7 +628,7 @@ def main():
 
     print("Done!")
     high_number_rules = [frequent_rules[idx] for idx in really_frequent_rules_idx]
-    np.save("bs_tf_rules.npy", high_number_rules)
+    np.save("frequent_rules.npy", high_number_rules)
 
 
 if __name__ == "__main__":

@@ -146,10 +146,10 @@ def apply_rules(dataset_path, model_path, top_rules):
 
         #print("Done with " + rule.hash())
     # Top 10 rules
-    top_10 = [x.replace("text_", "").replace("pos_", "") for x in
-              list({k: v for k, v in sorted(rule_flip_amount.items(), key=lambda item: item[1], reverse=True)})[:10]]
+    #top_10 = [x.replace("text_", "").replace("pos_", "") for x in
+    #          list({k: v for k, v in sorted(rule_flip_amount.items(), key=lambda item: item[1], reverse=True)})[:10]]
 
-    np.save(model_path[:model_path.rfind("/") + 1] + "top_10.npy", top_10)
+    #np.save(model_path[:model_path.rfind("/") + 1] + "top_10.npy", top_10)
     print("Time used for applying rules: ", time.time() - a)
     print("Total amount of adversaries:", sum(list(rule_flip_amount.values())))
     print("Total amount of afflicted data instances:",
