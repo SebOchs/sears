@@ -18,6 +18,4 @@ python setup.py install
 cd ..
 ```
 
-Download and unpack [the translation models](https://drive.google.com/open?id=1b2upZvq5kM0lN0T7YaAY30xRdbamuk9y) into the `translation_models` folder.
-
-Run `jupyter notebook`, change kernel to `sears`, and run the notebook :)
+In cooperation with Anna Filighera and the Multimedia Communications Lab at TU Darmstadt.
